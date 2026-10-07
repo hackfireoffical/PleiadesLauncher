@@ -75,7 +75,8 @@ fun PleiadesTheme(
     val reduceMotion = rememberReduceMotion()
     MaterialTheme(
         colorScheme = if (darkTheme) DarkScheme else LightScheme,
-        typography = PleiadesTypography
+        typography = PleiadesTypography,
+        shapes = PleiadesShapes
     ) {
         CompositionLocalProvider(LocalReduceMotion provides reduceMotion) {
             content()

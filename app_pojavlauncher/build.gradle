@@ -1,5 +1,7 @@
 plugins {
     id 'com.android.application' version '8.11.1'
+    id 'org.jetbrains.kotlin.android' version '2.0.21'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.0.21'
     id 'de.undercouch.download' version '5.6.0'
     id 'org.ajoberstar.grgit' version '5.3.2'
 }
@@ -81,7 +83,7 @@ android {
 
     defaultConfig {
         applicationId "git.artdeell.mjlaunch"
-        minSdkVersion 21
+        minSdkVersion 26
         targetSdkVersion 36
         versionCode getDateSeconds()
         versionName getVersionName()
@@ -159,6 +161,10 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
     bundle {
         language {
             enableSplit = false
@@ -174,6 +180,7 @@ android {
 
     buildFeatures {
         buildConfig true
+        compose true
     }
 }
 
@@ -346,4 +353,18 @@ dependencies {
     // implementation 'net.sourceforge.streamsupport:streamsupport-cfuture:1.7.0'
 
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    // --- Compose / Material 3 (M0 foundation) ---
+    def composeBom = platform('androidx.compose:compose-bom:2024.10.01')
+    implementation composeBom
+    androidTestImplementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.animation:animation'
+    implementation 'androidx.activity:activity-compose:1.9.3'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
 }

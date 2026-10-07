@@ -53,11 +53,33 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Build debug APK (full)
-        run: gradle :app_pojavlauncher:assembleFullDebug
+      - name: Build debug APKs
+        run: |
+          set -o pipefail
+          gradle :app_pojavlauncher:assembleFullDebug :app_pojavlauncher:assembleNoruntimeDebug --console=plain 2>&1 | tee build.log
 
-      - name: Build debug APK (no runtime)
-        run: gradle :app_pojavlauncher:assembleNoruntimeDebug
+      - name: Summarize errors
+        if: failure()
+        run: |
+          {
+            echo '## Build failed'
+            echo '### Compiler errors'
+            echo '```'
+            grep -nE '^e: |error: ' build.log | head -40 || true
+            echo '```'
+            echo '### Gradle failure reason'
+            echo '```'
+            grep -n -A8 'What went wrong' build.log | head -40 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-debug
+          path: build.log
+          if-no-files-found: ignore
 
       - name: Collect APKs
         run: |
@@ -98,14 +120,32 @@ jobs:
           java-version: '17'
 
       - name: Unit tests
-        run: gradle :app_pojavlauncher:testFullDebugUnitTest
+        run: |
+          set -o pipefail
+          gradle :app_pojavlauncher:testFullDebugUnitTest --console=plain 2>&1 | tee test.log
+
+      - name: Summarize errors
+        if: failure()
+        run: |
+          {
+            echo '## Tests/compile failed'
+            echo '```'
+            grep -nE '^e: |error: |FAILED' test.log | head -40 || true
+            echo '```'
+            echo '### Gradle failure reason'
+            echo '```'
+            grep -n -A8 'What went wrong' test.log | head -40 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: app_pojavlauncher/build/reports/tests/
+          path: |
+            app_pojavlauncher/build/reports/tests/
+            test.log
           if-no-files-found: ignore
 
   release:
@@ -170,7 +210,20 @@ jobs:
           java-version: '17'
 
       - name: Build release APK
-        run: gradle :app_pojavlauncher:assembleFullRelease
+        run: |
+          set -o pipefail
+          gradle :app_pojavlauncher:assembleFullRelease --console=plain 2>&1 | tee release.log
+
+      - name: Summarize errors
+        if: failure()
+        run: |
+          {
+            echo '## Release build failed'
+            echo '```'
+            grep -nE '^e: |error: ' release.log | head -40 || true
+            echo '```'
+            grep -n -A8 'What went wrong' release.log | head -40 || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Collect APK
         run: |

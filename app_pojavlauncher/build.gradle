@@ -1,5 +1,7 @@
 plugins {
     id 'com.android.application' version '8.11.1'
+    id 'org.jetbrains.kotlin.android' version '2.2.20'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.2.20'
     id 'de.undercouch.download' version '5.6.0'
     id 'org.ajoberstar.grgit' version '5.3.2'
 }
@@ -54,6 +56,12 @@ configurations {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
+    }
+}
+
 android {
     // Kept as-is: renaming the Java package is a separate, large refactor.
     // applicationId below is independent of this namespace.
@@ -84,10 +92,13 @@ android {
 
     defaultConfig {
         applicationId "com.hackfire.pleiades"
-        minSdkVersion 21
+        minSdkVersion 26
         targetSdkVersion 36
         versionCode getDateSeconds()
         versionName getVersionName()
+        // NOTE (M0): Compose adds many methods. If the build fails with
+        // "Cannot fit requested classes in a single dex file", this flag is the cause.
+        // It was marked "important" upstream; find out why before flipping it.
         multiDexEnabled false //important
         resValue 'string', 'curseforge_api_key', getCFApiKey()
         resValue 'string', 'group_id', 'git.artdeell'
@@ -170,6 +181,7 @@ android {
 
     buildFeatures {
         buildConfig true
+        compose true
     }
 }
 
@@ -342,6 +354,13 @@ dependencies {
     // implementation 'net.sourceforge.streamsupport:streamsupport-cfuture:1.7.0'
 
     implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    // Compose (M0). Versions pinned via the BOM; verify they resolve in CI.
+    implementation platform('androidx.compose:compose-bom:2025.09.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.activity:activity-compose:1.10.1'
 
     testImplementation 'junit:junit:4.13.2'
 }

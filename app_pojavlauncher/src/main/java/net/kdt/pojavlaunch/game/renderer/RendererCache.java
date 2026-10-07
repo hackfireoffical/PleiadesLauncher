@@ -29,7 +29,8 @@ public class RendererCache {
     }
 
     /**
-     * Return a list of renderers compatible with the current device
+     * Return a list of renderers compatible with the current device and not disabled by the user
+     * (see {@link RendererState}).
      * Don't forget to clean the cache when the list isn't needed anymore
      *
      * @param context application context
@@ -48,6 +49,7 @@ public class RendererCache {
             RenderSpec r = GameRenderer.getKnownRenderer(renderer);
             assert r != null;
             if (!r.compatibleDevice(context)) continue;
+            if (!RendererState.isEnabled(context, renderer)) continue;
             rendererIds.add(renderer);
             rendererNames.add(resources.getString(r.displayName()));
         }
@@ -60,6 +62,7 @@ public class RendererCache {
      * Destroy compatible renderers cache
      */
     public static void releaseRendererCache() {
+        if (sCompatibleRenderers == null) return;
         sCompatibleRenderers.rendererIds.clear();
         sCompatibleRenderers = null;
     }

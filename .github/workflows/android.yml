@@ -4,18 +4,17 @@ on:
   push:
   workflow_dispatch:
   pull_request:
-    types: [labeled]
+
+env:
+  CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
 
 jobs:
-  build:
+  debug:
+    name: Debug APK
     runs-on: ubuntu-22.04
-    env:
-      UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_NEXT_KEYSTORE_PASSWORD }}
-      MOJOPUB_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_NEXT_KEYSTORE_PASSWORD }}
-      CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -30,7 +29,7 @@ jobs:
           path: app_pojavlauncher/libs
 
       - name: Get Mesa
-        uses: dawidd6/action-download-artifact@v6  
+        uses: dawidd6/action-download-artifact@v6
         continue-on-error: true
         with:
           github_token: ${{ secrets.MESA_ACTIONS }}
@@ -41,81 +40,146 @@ jobs:
           name: mesa-aar
           path: app_pojavlauncher/libs
 
+      - name: List renderer libs (sanity check)
+        run: ls -la app_pojavlauncher/libs || true
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.14.3"
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Create out directory
-        run: mkdir out
-      - name: Build Publishing .aab
-        if: github.repository_owner == 'MojoLauncher' && github.ref_name == 'v3_openjdk'
-        run: |
-          gradle :app_pojavlauncher:bundleFullGplay
-          mv app_pojavlauncher/build/outputs/bundle/fullGplay/app_pojavlauncher-full-gplay.aab out/app-gplay.aab
 
-      - name: Build Debug .apk
-        run: |
-          # Build the launcher
-          gradle :app_pojavlauncher:assembleFullDebug
-          mv app_pojavlauncher/build/outputs/apk/full/debug/app_pojavlauncher-full-debug.apk out/app-debug-full.apk
+      - name: Build debug APK (full)
+        run: gradle :app_pojavlauncher:assembleFullDebug
 
-      - name: Build Debug .apk (No runtime)
-        run: |
-          gradle :app_pojavlauncher:assembleNoruntimeDebug
-          mv app_pojavlauncher/build/outputs/apk/noruntime/debug/app_pojavlauncher-noruntime-debug.apk out/app-debug-noruntime.apk
-      - name: Build Nightly Release .apk
-        if: github.repository_owner == 'MojoLauncher' && github.ref_name == 'v3_openjdk'
-        run: |
-          gradle :app_pojavlauncher:assembleFullPubRelease
-          mv app_pojavlauncher/build/outputs/apk/full/pubRelease/app_pojavlauncher-full-pubRelease.apk out/MojoLauncher-release.apk
-      - name: Gen md5sums
-        run: |
-          md5sum out/app-debug-full.apk > out/app-debug-full.md5
-          md5sum out/app-debug-noruntime.apk > out/app-debug-noruntime.md5
+      - name: Build debug APK (no runtime)
+        run: gradle :app_pojavlauncher:assembleNoruntimeDebug
 
-      - name: Upload Debug APK
+      - name: Collect APKs
+        run: |
+          mkdir out
+          mv app_pojavlauncher/build/outputs/apk/full/debug/app_pojavlauncher-full-debug.apk out/pleiades-debug-full.apk
+          mv app_pojavlauncher/build/outputs/apk/noruntime/debug/app_pojavlauncher-noruntime-debug.apk out/pleiades-debug-noruntime.apk
+          (cd out && md5sum *.apk > md5sums.txt)
+
+      - name: Upload debug APK (full)
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: out/app-debug-full.apk
+          name: pleiades-debug-full
+          path: out/pleiades-debug-full.apk
 
-      - name: Upload Debug APK (No runtime)
+      - name: Upload debug APK (no runtime)
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-noruntime
-          path: out/app-debug-noruntime.apk
+          name: pleiades-debug-noruntime
+          path: out/pleiades-debug-noruntime.apk
 
-      - name: Release Nightly APK
-        if: github.repository_owner == 'MojoLauncher' && github.ref_name == 'v3_openjdk'
-        uses: softprops/action-gh-release@v3
+  tests:
+    name: Unit tests and compile checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: MojoLauncher Nightly Builds
-          prerelease: true
-          tag_name: nightly
-          body: |
-            MojoLauncher nightly build.
-            Commit hash: ${{ github.sha }}
-          files: |
-            out/MojoLauncher-release.apk
+          submodules: true
 
-      - name: Upload AAB
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Unit tests
+        run: gradle :app_pojavlauncher:testFullDebugUnitTest
+
+      - name: Upload test reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-aab
-          path: out/app-gplay.aab
+          name: test-reports
+          path: app_pojavlauncher/build/reports/tests/
+          if-no-files-found: ignore
 
-      - name: Upload onto the Google Play testing track
+  release:
+    name: Release APK
+    # Manual runs and version tags only.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    env:
+      PLEIADES_KEYSTORE_PASSWORD: ${{ secrets.PLEIADES_KEYSTORE_PASSWORD }}
+      PLEIADES_KEY_ALIAS: ${{ secrets.PLEIADES_KEY_ALIAS }}
+      PLEIADES_KEY_PASSWORD: ${{ secrets.PLEIADES_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Get LTW
+        uses: dawidd6/action-download-artifact@v6
         continue-on-error: true
-        if: github.repository_owner == 'MojoLauncher' && github.ref_name == 'v3_openjdk'
-        uses: r0adkll/upload-google-play@v1.1.5
         with:
-          serviceAccountJsonPlainText: ${{ secrets.SERVICE_JSON }}
-          packageName: git.artdeell.mjlaunch
-          releaseFiles: out/app-gplay.aab
-          track: internal
-          inAppUpdatePriority: 5
+          repo: MojoLauncher/LTW
+          workflow: android.yml
+          workflow_conclusion: success
+          name: output-aar
+          path: app_pojavlauncher/libs
+
+      - name: Get Mesa
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          github_token: ${{ secrets.MESA_ACTIONS }}
+          repo: MojoLauncher/mesa-unified2
+          workflow: android.yml
+          workflow_conclusion: success
+          branch: mojo/26.2
+          name: mesa-aar
+          path: app_pojavlauncher/libs
+
+      - name: Decode release keystore
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.PLEIADES_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "PLEIADES_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::PLEIADES_KEYSTORE_BASE64 secret missing - APK will use the DEBUG key. Do not publish."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build release APK
+        run: gradle :app_pojavlauncher:assembleFullRelease
+
+      - name: Collect APK
+        run: |
+          mkdir out
+          mv app_pojavlauncher/build/outputs/apk/full/release/app_pojavlauncher-full-release.apk out/pleiades-release.apk
+          md5sum out/pleiades-release.apk > out/pleiades-release.md5
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.keystore.outputs.signed == 'true' && 'pleiades-release' || 'pleiades-release-DEBUGKEY-DO-NOT-PUBLISH' }}
+          path: out/

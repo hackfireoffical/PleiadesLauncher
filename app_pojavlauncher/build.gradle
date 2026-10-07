@@ -27,7 +27,7 @@ def getVersionName = {
     }else {
         def branchName = currentBranch.getName()
         def commitAbbreviation = latestCommit.abbreviatedId
-        return "justicia-${dateToday}-${commitAbbreviation}-${branchName}"
+        return "pleiades-${dateToday}-${commitAbbreviation}-${branchName}"
     }
 }
 
@@ -42,6 +42,11 @@ def getCFApiKey = {
     return "DUMMY"
 }
 
+// Release signing comes from the environment (GitHub Actions secrets).
+// If PLEIADES_KEYSTORE_FILE is unset, release builds fall back to the debug key
+// so CI still produces an installable APK. Do NOT publish such builds.
+def hasReleaseKeystore = System.getenv("PLEIADES_KEYSTORE_FILE") != null
+
 configurations {
     instrumentedClasspath {
         canBeConsumed = false
@@ -50,6 +55,8 @@ configurations {
 }
 
 android {
+    // Kept as-is: renaming the Java package is a separate, large refactor.
+    // applicationId below is independent of this namespace.
     namespace 'git.artdeell.mojo'
 
     compileSdk = 36
@@ -65,22 +72,18 @@ android {
             keyAlias "androiddebugkey"
             keyPassword "android"
         }
-        googlePlayBuild {
-            storeFile file("mojo_upload_next.jks")
-            storePassword System.getenv("UPLOAD_KEYSTORE_PASSWORD")
-            keyAlias "key0"
-            keyPassword System.getenv("UPLOAD_KEYSTORE_PASSWORD")
-        }
-        publicBuild {
-            storeFile file("mojo_release_next.jks")
-            storePassword System.getenv("MOJOPUB_KEYSTORE_PASSWORD")
-            keyAlias "key0"
-            keyPassword System.getenv("MOJOPUB_KEYSTORE_PASSWORD")
+        if (hasReleaseKeystore) {
+            pleiadesRelease {
+                storeFile file(System.getenv("PLEIADES_KEYSTORE_FILE"))
+                storePassword System.getenv("PLEIADES_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("PLEIADES_KEY_ALIAS")
+                keyPassword System.getenv("PLEIADES_KEY_PASSWORD")
+            }
         }
     }
 
     defaultConfig {
-        applicationId "git.artdeell.mjlaunch"
+        applicationId "com.hackfire.pleiades"
         minSdkVersion 21
         targetSdkVersion 36
         versionCode getDateSeconds()
@@ -88,6 +91,11 @@ android {
         multiDexEnabled false //important
         resValue 'string', 'curseforge_api_key', getCFApiKey()
         resValue 'string', 'group_id', 'git.artdeell'
+
+        // Primary target is arm64-v8a. To add architectures later, extend this list.
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
     }
 
     flavorDimensions  = ["runtime"]
@@ -110,8 +118,8 @@ android {
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.customDebug
-            resValue 'string', 'application_package', 'git.artdeell.mjlaunch.debug'
-            resValue 'string', 'storageProviderAuthorities', 'git.artdeell.mjlaunch.scoped.gamefolder.debug'
+            resValue 'string', 'application_package', 'com.hackfire.pleiades.debug'
+            resValue 'string', 'storageProviderAuthorities', 'com.hackfire.pleiades.scoped.gamefolder.debug'
         }
         proguard {
             initWith debug
@@ -128,21 +136,9 @@ android {
             // Don't set to true or java.awt will be a.a or something similar.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // defaultConfig already set
-            // multiDexEnabled = true
-            // debuggable = true
-            resValue 'string', 'storageProviderAuthorities', 'git.artdeell.mjlaunch.scoped.gamefolder'
-            resValue 'string', 'application_package', 'git.artdeell.mjlaunch'
-        }
-        gplay {
-            initWith release
-            signingConfig signingConfigs.googlePlayBuild
-            matchingFallbacks += List.of("release")
-        }
-        pubRelease {
-            initWith release
-            signingConfig signingConfigs.publicBuild
-            matchingFallbacks += List.of("release")
+            signingConfig hasReleaseKeystore ? signingConfigs.pleiadesRelease : signingConfigs.customDebug
+            resValue 'string', 'storageProviderAuthorities', 'com.hackfire.pleiades.scoped.gamefolder'
+            resValue 'string', 'application_package', 'com.hackfire.pleiades'
         }
     }
 
